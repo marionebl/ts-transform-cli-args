@@ -1,35 +1,11 @@
-import * as ts from "typescript";
-import * as JSON5 from "json5";
+import ts from "typescript";
+import JSON5 from "json5";
 import { createArrowFunction } from "./is/transform-node";
+import { ErrorType, ErrorMessage, message, ErrorPathSymbol, ErrorValueSymbol, ErrorTypeSymbol, ErrorExptectedTypeSymbol } from "./error-message";
 
 export interface TransformerOptions {
   env: { [key: string]: string };
 }
-
-export enum ErrorType {
-  Never
-}
-
-export const ErrorPathSymbol = Symbol();
-export const ErrorValueSymbol = Symbol();
-export const ErrorTypeSymbol = Symbol();
-
-export type ErrorSymbol =
-  | typeof ErrorPathSymbol
-  | typeof ErrorValueSymbol
-  | typeof ErrorTypeSymbol;
-export type ErrorMessage = (string | ErrorSymbol)[];
-
-export const message = (
-  strings: TemplateStringsArray,
-  ...args: ErrorSymbol[]
-): ErrorMessage => {
-  return strings.reduce<ErrorMessage>(
-    (acc, item, index) =>
-      args[index] ? [...acc, item, args[index]] : [...acc, item],
-    []
-  );
-};
 
 export const getTransformer = (program: ts.Program) => {
   const typeChecker = program.getTypeChecker();
@@ -75,6 +51,10 @@ export const getTransformer = (program: ts.Program) => {
             switch (data.type) {
               case ErrorType.Never:
                 return message`--${ErrorPathSymbol} should never be specified. Received ${ErrorValueSymbol}`;
+              case ErrorType.Missing:
+                return message`--${ErrorPathSymbol} is required but missing`;
+              case ErrorType.Mismatch:
+                return message`--${ErrorPathSymbol} must be of type ${ErrorExptectedTypeSymbol}. Received ${ErrorValueSymbol} of type ${ErrorTypeSymbol}`;
             }
           }
 
@@ -82,6 +62,10 @@ export const getTransformer = (program: ts.Program) => {
             switch (data.type) {
               case ErrorType.Never:
                 return message`argument at ${ErrorPathSymbol} should never be specified. Received ${ErrorValueSymbol}`;
+              case ErrorType.Missing:
+                return message`argument at ${ErrorPathSymbol} is required but missing`;
+              case ErrorType.Mismatch:
+                return message`argument at ${ErrorPathSymbol} must be of type ${ErrorExptectedTypeSymbol}. Received ${ErrorValueSymbol} of type ${ErrorTypeSymbol}`;
             }
           }
 

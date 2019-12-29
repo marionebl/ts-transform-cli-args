@@ -47,3 +47,33 @@ test("disallows named arguments by default", () => {
   const [err] = cli(["--hello='world'"]);
   expect(err.message).toBe(`unknown flag --hello is not allowed`);
 });
+
+test("requires declared named arguments", () => {
+  const cli = getCli(`
+    import { fromType } from "ts-transform-cli-args";
+    export const cli = fromType<{ hello: string }>();
+  `);
+
+  const [err] = cli([]);
+  expect(err.message).toBe(`--hello is required but missing`);
+});
+
+test("validates declared string named argument", () => {
+  const cli = getCli(`
+    import { fromType } from "ts-transform-cli-args";
+    export const cli = fromType<{ hello: string }>();
+  `);
+
+  const [err] = cli(["--hello"]);
+  expect(err.message).toBe(`--hello must be of type string. Received true of type boolean`);
+});
+
+test("validates declared boolean named argument", () => {
+  const cli = getCli(`
+    import { fromType } from "ts-transform-cli-args";
+    export const cli = fromType<{ hello: boolean }>();
+  `);
+
+  const [err] = cli(["--hello='world'"]);
+  expect(err.message).toBe(`--hello must be of type boolean. Received "world" of type string`);
+});

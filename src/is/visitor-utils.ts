@@ -7,8 +7,9 @@ import {
   ErrorSymbol,
   ErrorTypeSymbol,
   ErrorPathSymbol,
-  ErrorValueSymbol
-} from "../ts-transform-cli-args";
+  ErrorValueSymbol,
+  ErrorExptectedTypeSymbol
+} from "../error-message";
 
 export const objectIdentifier = ts.createIdentifier("object");
 export const pathIdentifier = ts.createIdentifier("path");
@@ -186,31 +187,15 @@ export function getResolvedTypeParameter(
 }
 
 export function getStringFunction(visitorContext: VisitorContext) {
-  const name = "_string";
-  return setFunctionIfNotExists(name, visitorContext, () => {
-    return createAssertionFunction(
-      ts.createStrictInequality(
-        ts.createTypeOf(objectIdentifier),
-        ts.createStringLiteral("string")
-      ),
-      `expected a string`,
-      name
-    );
-  });
+  return setFunctionIfNotExists("_string", visitorContext, () =>
+    createTypeAssertionFunction("string", visitorContext)
+  );
 }
 
 export function getBooleanFunction(visitorContext: VisitorContext) {
-  const name = "_boolean";
-  return setFunctionIfNotExists(name, visitorContext, () => {
-    return createAssertionFunction(
-      ts.createStrictInequality(
-        ts.createTypeOf(objectIdentifier),
-        ts.createStringLiteral("boolean")
-      ),
-      "expected a boolean",
-      name
-    );
-  });
+  return setFunctionIfNotExists("_boolean", visitorContext, () =>
+    createTypeAssertionFunction("boolean", visitorContext)
+  );
 }
 
 export function getBigintFunction(visitorContext: VisitorContext) {
@@ -327,13 +312,13 @@ function expressionFromSymbol(symbol: ErrorSymbol): ts.Expression {
       return ts.createTypeOf(ts.createIdentifier("object"));
     case ErrorValueSymbol:
       return ts.createCall(
-          ts.createPropertyAccess(
-              ts.createIdentifier("JSON"),
-              ts.createIdentifier("stringify")
-          ),
-          undefined,
-          [ts.createIdentifier("object")]
-      )
+        ts.createPropertyAccess(
+          ts.createIdentifier("JSON"),
+          ts.createIdentifier("stringify")
+        ),
+        undefined,
+        [ts.createIdentifier("object")]
+      );
     case ErrorPathSymbol:
       return ts.createCall(
         ts.createPropertyAccess(
@@ -343,10 +328,14 @@ function expressionFromSymbol(symbol: ErrorSymbol): ts.Expression {
         undefined,
         [ts.createStringLiteral("")]
       );
+    case ErrorExptectedTypeSymbol:
+      return ts.createIdentifier("expectedType");
   }
 }
 
-function templateFromError(segments: ErrorMessage): ts.TemplateExpression {
+export function templateFromError(
+  segments: ErrorMessage
+): ts.TemplateExpression {
   const headCandidate = segments[0];
   const isStringHead = typeof headCandidate === "string";
   const head = ts.createTemplateHead(
@@ -361,8 +350,9 @@ function templateFromError(segments: ErrorMessage): ts.TemplateExpression {
       }
 
       const text = (items[index + 1] || "") as string;
+
       const span =
-        text === ""
+        segments.lastIndexOf(text) === segments.length - 1
           ? ts.createTemplateTail(text)
           : ts.createTemplateMiddle(text);
       return ts.createTemplateSpan(expressionFromSymbol(exp), span);
@@ -569,6 +559,64 @@ export function createDisjunctionFunction(
           ],
           ts.SyntaxKind.PlusToken
         )
+      )
+    ])
+  );
+}
+
+export function createTypeAssertionFunction(
+  expectedType: string,
+  visitorContext: VisitorContext
+) {
+  return createAssertionFunctionWithMessage({
+    failureCondition: ts.createStrictInequality(
+      ts.createTypeOf(objectIdentifier),
+      ts.createStringLiteral(expectedType)
+    ),
+    functionName: `_${expectedType}`,
+    expectedType,
+    message: visitorContext.createErrorMessage({
+      type: ErrorType.Mismatch
+    })
+  });
+}
+
+export function createAssertionFunctionWithMessage(init: {
+  failureCondition: ts.Expression;
+  functionName: string;
+  expectedType: string;
+  message: ErrorMessage;
+}) {
+  return ts.createFunctionDeclaration(
+    undefined,
+    undefined,
+    undefined,
+    init.functionName,
+    undefined,
+    [
+      ts.createParameter(
+        undefined,
+        undefined,
+        undefined,
+        objectIdentifier,
+        undefined,
+        undefined,
+        undefined
+      )
+    ],
+    undefined,
+    ts.createBlock([
+      ts.createVariableStatement(undefined, [
+        ts.createVariableDeclaration(
+          ts.createIdentifier("expectedType"),
+          undefined,
+          ts.createStringLiteral(init.expectedType)
+        )
+      ]),
+      ts.createIf(
+        init.failureCondition,
+        ts.createReturn(templateFromError(init.message)),
+        ts.createReturn(ts.createNull())
       )
     ])
   );

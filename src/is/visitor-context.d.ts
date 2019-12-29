@@ -1,5 +1,5 @@
-import * as ts from 'typescript';
-import { ErrorMessage } from '../ts-transform-cli-args';
+import ts from 'typescript';
+import { ErrorType, ErrorMessage } from '../error-message';
 
 interface Options {
     shortCircuit: boolean;
@@ -19,5 +19,5 @@ export interface PartialVisitorContext {
     options: Options;
     typeMapperStack: Map<ts.Type, ts.Type>[];
     previousTypeReference: ts.Type | null;
-    createErrorMessage(data: any): ErrorMessage;
+    createErrorMessage(data: { type: ErrorType }): ErrorMessage;
 }
