@@ -1,41 +1,49 @@
-import * as requireFromString from "require-from-string";
-import * as Ts from "typescript";
-import { transform } from "ts-transformer-testing-library";
+import requireFromString from "require-from-string";
+import Ts from "typescript";
+import { Transformer } from "ts-transformer-testing-library";
+import { FromType } from "./types";
 import { getTransformer } from "./ts-transform-cli-args";
 
-const mock = {
-  name: "ts-transform-cli-args",
-  content: "export const fromType = <T>(): any => ()"
-};
+const transformer = new Transformer()
+  .addTransformer(getTransformer)
+  .setCompilerOptions({ module: Ts.ModuleKind.CommonJS })
+  .addMock({
+    name: "ts-transform-cli-args",
+    content: "export const fromType = <T = any, V = any>(): any => ()"
+  });
 
-const options = {
-  transform: getTransformer,
-  compilerOptions: {
-    module: Ts.ModuleKind.CommonJS
-  },
-  mocks: [mock]
-};
-
-test("creates basic schema", () => {
-  let result = transform(
-    `
-    import * as Flags from "ts-transform-cli-args";
-
-    export interface A {
-      _: string[];
-      flag: boolean;
-    }
-
-    export const cli = Flags.fromType<A>();
-  `,
-    options
-  );
-
+const getCli = (source: string): FromType => {
+  const result = transformer.transform(source);
   const { cli } = requireFromString(result);
+  return cli as FromType;
+};
 
-  expect(cli([])).toEqual(expect.objectContaining({ message: "--flag is required" }));
-  expect(cli(["--flag"])).toEqual(expect.objectContaining({ flag: true }));
-  expect(cli(["--no-flag"])).toEqual(expect.objectContaining({ flag: false }));
-  expect(cli(["--flag", "--unknown"])).toEqual(expect.objectContaining({ message: "unknown flag --unknown is not allowed" }));
-  expect(cli(["--flag=1", "--unknown"])).toEqual(expect.objectContaining({ message: "--flag expected a boolean" }));
+test("allows empty input by default", () => {
+  const cli = getCli(`
+    import { fromType } from "ts-transform-cli-args";
+    export const cli = fromType();
+  `);
+
+  const result = cli([]);
+  expect(result).toEqual([null, [{}, []]]);
+});
+
+test("disallows positional arguments by default", () => {
+  const cli = getCli(`
+    import { fromType } from "ts-transform-cli-args";
+    export const cli = fromType();
+  `);
+
+  const [err] = cli(["Hello", "World"]);
+  expect(err.message).toBe(`argument at [0] should never be specified. Received "Hello"`);
+});
+
+test("disallows named arguments by default", () => {
+  const cli = getCli(`
+    import { fromType } from "ts-transform-cli-args";
+    export const cli = fromType();
+  `);
+
+  const [err] = cli(["--hello='world'"]);
+  expect(err.message).toBe(`unknown flag --hello is not allowed`);
 });

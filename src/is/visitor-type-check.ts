@@ -455,8 +455,8 @@ function visitLiteralType(type: ts.LiteralType, visitorContext: VisitorContext) 
                     VisitorUtils.objectIdentifier,
                     ts.createStringLiteral(value)
                 ),
-                `expected string '${type.value}'`,
-                name
+                name,
+                visitorContext.createErrorMessage
             );
         });
     } else if (typeof type.value === 'number') {
@@ -467,8 +467,8 @@ function visitLiteralType(type: ts.LiteralType, visitorContext: VisitorContext) 
                     VisitorUtils.objectIdentifier,
                     ts.createNumericLiteral(type.value.toString())
                 ),
-                `expected number '${type.value}'`,
-                name
+                name,
+                visitorContext.createErrorMessage
             );
         });
     } else {
@@ -515,8 +515,8 @@ function visitBooleanLiteral(type: ts.Type, visitorContext: VisitorContext) {
                     VisitorUtils.objectIdentifier,
                     ts.createTrue()
                 ),
-                `expected true`,
-                name
+                name,
+                visitorContext.createErrorMessage
             );
         });
     } else if (intrinsicName === 'false') {
@@ -527,8 +527,8 @@ function visitBooleanLiteral(type: ts.Type, visitorContext: VisitorContext) {
                     VisitorUtils.objectIdentifier,
                     ts.createFalse()
                 ),
-                `expected false`,
-                name
+                name,
+                visitorContext.createErrorMessage,
             );
         });
     } else {
@@ -567,8 +567,8 @@ function visitNonPrimitiveType(type: ts.Type, visitorContext: VisitorContext) {
             const condition = VisitorUtils.createBinaries(conditions, ts.SyntaxKind.AmpersandAmpersandToken);
             return VisitorUtils.createAssertionFunction(
                 ts.createLogicalNot(condition),
-                `expected a non-primitive`,
-                name
+                name,
+                visitorContext.createErrorMessage
             );
         });
     } else {

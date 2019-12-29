@@ -35,7 +35,7 @@
     "ts-node": "^8.5.4",
     "ts-transformer-testing-library": "^1.0.0-alpha.2",
     "ttypescript": "^1.5.8",
-    "typescript": "^3.7.3",
+    "typescript": "^3.7.4",
     "yargs-parser": "^16.1.0"
   },
   "dependencies": {

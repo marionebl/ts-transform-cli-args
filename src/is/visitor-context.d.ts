@@ -1,4 +1,5 @@
 import * as ts from 'typescript';
+import { ErrorMessage } from '../ts-transform-cli-args';
 
 interface Options {
     shortCircuit: boolean;
@@ -18,4 +19,5 @@ export interface PartialVisitorContext {
     options: Options;
     typeMapperStack: Map<ts.Type, ts.Type>[];
     previousTypeReference: ts.Type | null;
+    createErrorMessage(data: any): ErrorMessage;
 }
