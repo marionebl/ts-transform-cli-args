@@ -2,6 +2,11 @@ import requireFromString from "require-from-string";
 import { Transformer } from "ts-transformer-testing-library";
 import { FromType } from "./types";
 
+export interface InterfaceDescriptor {
+  positional: string;
+  named: string;
+}
+
 export class TestCli {
   private constructor(private transformer: Transformer) {}
 
@@ -15,13 +20,20 @@ export class TestCli {
     return cli as FromType;
   }
 
-  public fromInterface(interfaceSource?: string): FromType {
-    const interfaceDeclaration =
-      typeof interfaceSource === "string" ? `<${interfaceSource}>` : "";
+  public fromInterface(descriptor?: Partial<InterfaceDescriptor>): FromType {
+    if (!descriptor) {
+      return this.fromModule(`
+        import { fromType } from "ts-transform-cli-args";
+        export const cli = fromType();
+      `);
+    }
 
     return this.fromModule(`
       import { fromType } from "ts-transform-cli-args";
-      export const cli = fromType${interfaceDeclaration}();
+      export const cli = fromType<${[
+        descriptor.named || "{}",
+        descriptor.positional || "[]"
+      ]}>();
     `);
   }
 }

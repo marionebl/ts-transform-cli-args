@@ -7,7 +7,7 @@ import * as VisitorIndexedAccess from "./visitor-indexed-access";
 import * as VisitorIsStringKeyof from "./visitor-is-string-keyof";
 import * as VisitorTypeName from "./visitor-type-name";
 import { sliceSet } from "./utils";
-import { ErrorType } from "../error-message";
+import { ErrorType, templateFromError } from "../error-message";
 
 function visitTupleObjectType(
   type: ts.TupleType,
@@ -32,6 +32,8 @@ function visitTupleObjectType(
       }
     }
 
+    const errorType = minLength === maxLength ? ErrorType.Length : ErrorType.Range;
+
     return ts.createFunctionDeclaration(
       undefined,
       undefined,
@@ -51,6 +53,23 @@ function visitTupleObjectType(
       ],
       undefined,
       ts.createBlock([
+        ts.createVariableStatement(undefined, [
+          ts.createVariableDeclaration(
+            ts.createIdentifier("expectedLength"),
+            undefined,
+            ts.createLiteral(minLength)
+          ),
+          ts.createVariableDeclaration(
+            ts.createIdentifier("expectedMinLength"),
+            undefined,
+            ts.createLiteral(minLength)
+          ),
+          ts.createVariableDeclaration(
+            ts.createIdentifier("expectedMaxLength"),
+            undefined,
+            ts.createLiteral(maxLength)
+          )
+        ]),
         ts.createIf(
           VisitorUtils.createBinaries(
             [
@@ -81,19 +100,10 @@ function visitTupleObjectType(
             ts.SyntaxKind.BarBarToken
           ),
           ts.createReturn(
-            VisitorUtils.createBinaries(
-              [
-                ts.createStringLiteral("--"),
-                ts.createCall(
-                  ts.createPropertyAccess(VisitorUtils.pathIdentifier, "join"),
-                  undefined,
-                  [ts.createStringLiteral(".")]
-                ),
-                ts.createStringLiteral(
-                  `must be array of length [${minLength}-${maxLength}]`
-                )
-              ],
-              ts.SyntaxKind.PlusToken
+            templateFromError(
+              visitorContext.createErrorMessage({
+                type: errorType
+              })
             )
           )
         ),
@@ -376,7 +386,7 @@ function visitRegularObjectType(
                     ),
                     propertyInfo.optional
                       ? ts.createIdentifier("undefined")
-                      : VisitorUtils.templateFromError(
+                      : templateFromError(
                           visitorContext.createErrorMessage({
                             type: ErrorType.Missing
                           })
@@ -387,10 +397,7 @@ function visitRegularObjectType(
             ),
             ts.createExpressionStatement(
               ts.createCall(
-                ts.createPropertyAccess(
-                  VisitorUtils.pathIdentifier,
-                  "pop"
-                ),
+                ts.createPropertyAccess(VisitorUtils.pathIdentifier, "pop"),
                 undefined,
                 undefined
               )

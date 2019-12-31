@@ -1,7 +1,12 @@
 import ts from "typescript";
 import JSON5 from "json5";
 import { createArrowFunction } from "./is/transform-node";
-import { ErrorType, ErrorMessage, message, ErrorPathSymbol, ErrorValueSymbol, ErrorTypeSymbol, ErrorExptectedTypeSymbol } from "./error-message";
+import {
+  ErrorType,
+  ErrorMessage,
+  message,
+  symbols
+} from "./error-message";
 
 export interface TransformerOptions {
   env: { [key: string]: string };
@@ -47,25 +52,37 @@ export const getTransformer = (program: ts.Program) => {
           const argNode = node.arguments[0];
           const options = argNode ? getOptions(argNode) : {};
 
-          function createNamedErrorMessage(data: { type: ErrorType }): ErrorMessage {
+          function createNamedErrorMessage(data: {
+            type: ErrorType;
+          }): ErrorMessage {
             switch (data.type) {
               case ErrorType.Never:
-                return message`--${ErrorPathSymbol} should never be specified. Received ${ErrorValueSymbol}`;
+                return message`--${symbols.path} should never be specified. Received ${symbols.actualValue}`;
               case ErrorType.Missing:
-                return message`--${ErrorPathSymbol} is required but missing`;
+                return message`--${symbols.path} is required but missing`;
               case ErrorType.Mismatch:
-                return message`--${ErrorPathSymbol} must be of type ${ErrorExptectedTypeSymbol}. Received ${ErrorValueSymbol} of type ${ErrorTypeSymbol}`;
+                return message`--${symbols.path} must be of type ${symbols.expectedType}. Received ${symbols.actualValue} of type ${symbols.actualType}`;
+              case ErrorType.Length:
+                return message`--${symbols.path} must be array of length ${symbols.expectedLength}. Received ${symbols.actualValue} of length ${symbols.actualLength}`;
+              case ErrorType.Range:
+                return message`--${symbols.path} must be array with a length from ${symbols.expectedMinLength} to ${symbols.expectedMaxLength}. Received ${symbols.actualValue} of length ${symbols.actualLength}`
             }
           }
 
-          function createPositionalErrorMessage(data: { type: ErrorType }): ErrorMessage {
+          function createPositionalErrorMessage(data: {
+            type: ErrorType;
+          }): ErrorMessage {
             switch (data.type) {
               case ErrorType.Never:
-                return message`argument at ${ErrorPathSymbol} should never be specified. Received ${ErrorValueSymbol}`;
+                return message`argument at ${symbols.path} should never be specified. Received ${symbols.actualValue}`;
               case ErrorType.Missing:
-                return message`argument at ${ErrorPathSymbol} is required but missing`;
+                return message`argument at ${symbols.path} is required but missing`;
               case ErrorType.Mismatch:
-                return message`argument at ${ErrorPathSymbol} must be of type ${ErrorExptectedTypeSymbol}. Received ${ErrorValueSymbol} of type ${ErrorTypeSymbol}`;
+                return message`argument at ${symbols.path} must be of type ${symbols.expectedType}. Received ${symbols.actualValue} of type ${symbols.actualType}`;
+              case ErrorType.Length:
+                return message`requires exactly ${symbols.expectedLength} arguments. Received ${symbols.actualValue} of length ${symbols.actualLength}`;
+              case ErrorType.Range:
+                return message`requires ${symbols.expectedMinLength} to ${symbols.expectedMaxLength} arguments. Received ${symbols.actualValue} of length ${symbols.actualLength}`
             }
           }
 

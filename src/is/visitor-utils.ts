@@ -1,15 +1,7 @@
-import * as ts from "typescript";
+import ts from "typescript";
 import * as tsutils from "tsutils/typeguard/3.0";
 import { VisitorContext } from "./visitor-context";
-import {
-  ErrorMessage,
-  ErrorType,
-  ErrorSymbol,
-  ErrorTypeSymbol,
-  ErrorPathSymbol,
-  ErrorValueSymbol,
-  ErrorExptectedTypeSymbol
-} from "../error-message";
+import { ErrorMessage, ErrorType, templateFromError } from "../error-message";
 
 export const objectIdentifier = ts.createIdentifier("object");
 export const pathIdentifier = ts.createIdentifier("path");
@@ -46,17 +38,7 @@ export function checkIsClass(
     hasConstructSignatures = constructSignatures.length >= 1;
   }
 
-  if (type.isClass() || hasConstructSignatures) {
-    if (visitorContext.options.ignoreClasses) {
-      return true;
-    } else {
-      throw new Error(
-        "Classes cannot be validated. https://github.com/woutervh-/typescript-is/issues/3"
-      );
-    }
-  } else {
-    return false;
-  }
+  return type.isClass() || hasConstructSignatures;
 }
 
 export function setFunctionIfNotExists(
@@ -187,68 +169,27 @@ export function getResolvedTypeParameter(
 }
 
 export function getStringFunction(visitorContext: VisitorContext) {
-  return setFunctionIfNotExists("_string", visitorContext, () =>
-    createTypeAssertionFunction("string", visitorContext)
-  );
+  return createTypeAssertionFunction("string", visitorContext);
 }
 
 export function getBooleanFunction(visitorContext: VisitorContext) {
-  return setFunctionIfNotExists("_boolean", visitorContext, () =>
-    createTypeAssertionFunction("boolean", visitorContext)
-  );
+  return createTypeAssertionFunction("boolean", visitorContext);
 }
 
 export function getBigintFunction(visitorContext: VisitorContext) {
-  const name = "_bigint";
-  return setFunctionIfNotExists(name, visitorContext, () => {
-    return createAssertionFunction(
-      ts.createStrictInequality(
-        ts.createTypeOf(objectIdentifier),
-        ts.createStringLiteral("bigint")
-      ),
-      "expected a bigint",
-      name
-    );
-  });
+  return createTypeAssertionFunction("bigint", visitorContext);
 }
 
 export function getNumberFunction(visitorContext: VisitorContext) {
-  const name = "_number";
-  return setFunctionIfNotExists(name, visitorContext, () => {
-    return createAssertionFunction(
-      ts.createStrictInequality(
-        ts.createTypeOf(objectIdentifier),
-        ts.createStringLiteral("number")
-      ),
-      "expected a number",
-      name
-    );
-  });
+  return createTypeAssertionFunction("number", visitorContext);
 }
 
 export function getUndefinedFunction(visitorContext: VisitorContext) {
-  const name = "_undefined";
-  return setFunctionIfNotExists(name, visitorContext, () => {
-    return createAssertionFunction(
-      ts.createStrictInequality(
-        objectIdentifier,
-        ts.createIdentifier("undefined")
-      ),
-      "expected undefined",
-      name
-    );
-  });
+  return createTypeAssertionFunction("undefined", visitorContext);
 }
 
 export function getNullFunction(visitorContext: VisitorContext) {
-  const name = "_null";
-  return setFunctionIfNotExists(name, visitorContext, () => {
-    return createAssertionFunction(
-      ts.createStrictInequality(objectIdentifier, ts.createNull()),
-      "expected null",
-      name
-    );
-  });
+  return createTypeAssertionFunction("null", visitorContext);
 }
 
 export function getNeverFunction(visitorContext: VisitorContext) {
@@ -303,65 +244,6 @@ export function createAcceptingFunction(functionName: string) {
     [],
     undefined,
     ts.createBlock([ts.createReturn(ts.createNull())])
-  );
-}
-
-function expressionFromSymbol(symbol: ErrorSymbol): ts.Expression {
-  switch (symbol) {
-    case ErrorTypeSymbol:
-      return ts.createTypeOf(ts.createIdentifier("object"));
-    case ErrorValueSymbol:
-      return ts.createCall(
-        ts.createPropertyAccess(
-          ts.createIdentifier("JSON"),
-          ts.createIdentifier("stringify")
-        ),
-        undefined,
-        [ts.createIdentifier("object")]
-      );
-    case ErrorPathSymbol:
-      return ts.createCall(
-        ts.createPropertyAccess(
-          ts.createIdentifier("path"),
-          ts.createIdentifier("join")
-        ),
-        undefined,
-        [ts.createStringLiteral("")]
-      );
-    case ErrorExptectedTypeSymbol:
-      return ts.createIdentifier("expectedType");
-  }
-}
-
-export function templateFromError(
-  segments: ErrorMessage
-): ts.TemplateExpression {
-  const headCandidate = segments[0];
-  const isStringHead = typeof headCandidate === "string";
-  const head = ts.createTemplateHead(
-    typeof headCandidate === "string" ? headCandidate : ""
-  );
-  const items = segments.slice(isStringHead ? 1 : 0);
-
-  const spans = items
-    .map((exp, index) => {
-      if (typeof exp == "string") {
-        return;
-      }
-
-      const text = (items[index + 1] || "") as string;
-
-      const span =
-        segments.lastIndexOf(text) === segments.length - 1
-          ? ts.createTemplateTail(text)
-          : ts.createTemplateMiddle(text);
-      return ts.createTemplateSpan(expressionFromSymbol(exp), span);
-    })
-    .filter(item => typeof item !== "undefined");
-
-  return ts.createTemplateExpression(
-    (head as unknown) as ts.TemplateHead,
-    spans as ts.TemplateSpan[]
   );
 }
 
@@ -568,16 +450,18 @@ export function createTypeAssertionFunction(
   expectedType: string,
   visitorContext: VisitorContext
 ) {
-  return createAssertionFunctionWithMessage({
-    failureCondition: ts.createStrictInequality(
-      ts.createTypeOf(objectIdentifier),
-      ts.createStringLiteral(expectedType)
-    ),
-    functionName: `_${expectedType}`,
-    expectedType,
-    message: visitorContext.createErrorMessage({
-      type: ErrorType.Mismatch
-    })
+  return setFunctionIfNotExists(`_${expectedType}`, visitorContext, () => {
+    return createAssertionFunctionWithMessage({
+      failureCondition: ts.createStrictInequality(
+        ts.createTypeOf(objectIdentifier),
+        ts.createStringLiteral(expectedType)
+      ),
+      functionName: `_${expectedType}`,
+      expectedType,
+      message: visitorContext.createErrorMessage({
+        type: ErrorType.Mismatch
+      })
+    });
   });
 }
 
