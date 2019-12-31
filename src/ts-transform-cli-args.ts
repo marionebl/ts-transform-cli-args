@@ -14,7 +14,6 @@ export interface TransformerOptions {
 
 export const getTransformer = (program: ts.Program) => {
   const typeChecker = program.getTypeChecker();
-  const host = ts.createCompilerHost(program.getCompilerOptions());
 
   function getVisitor(ctx: ts.TransformationContext, sf: ts.SourceFile) {
     const visitor: ts.Visitor = (node: ts.Node): ts.VisitResult<ts.Node> => {
@@ -60,12 +59,14 @@ export const getTransformer = (program: ts.Program) => {
                 return message`--${symbols.path} should never be specified. Received ${symbols.actualValue}`;
               case ErrorType.Missing:
                 return message`--${symbols.path} is required but missing`;
-              case ErrorType.Mismatch:
+              case ErrorType.TypeMismatch:
                 return message`--${symbols.path} must be of type ${symbols.expectedType}. Received ${symbols.actualValue} of type ${symbols.actualType}`;
               case ErrorType.Length:
                 return message`--${symbols.path} must be array of length ${symbols.expectedLength}. Received ${symbols.actualValue} of length ${symbols.actualLength}`;
               case ErrorType.Range:
                 return message`--${symbols.path} must be array with a length from ${symbols.expectedMinLength} to ${symbols.expectedMaxLength}. Received ${symbols.actualValue} of length ${symbols.actualLength}`
+              case ErrorType.LiteralMismatch:
+                return message`--${symbols.path} must be ${symbols.expectedValue}, received ${symbols.actualValue}`
             }
           }
 
@@ -77,12 +78,14 @@ export const getTransformer = (program: ts.Program) => {
                 return message`argument at ${symbols.path} should never be specified. Received ${symbols.actualValue}`;
               case ErrorType.Missing:
                 return message`argument at ${symbols.path} is required but missing`;
-              case ErrorType.Mismatch:
+              case ErrorType.TypeMismatch:
                 return message`argument at ${symbols.path} must be of type ${symbols.expectedType}. Received ${symbols.actualValue} of type ${symbols.actualType}`;
               case ErrorType.Length:
                 return message`requires exactly ${symbols.expectedLength} arguments. Received ${symbols.actualValue} of length ${symbols.actualLength}`;
               case ErrorType.Range:
                 return message`requires ${symbols.expectedMinLength} to ${symbols.expectedMaxLength} arguments. Received ${symbols.actualValue} of length ${symbols.actualLength}`
+              case ErrorType.LiteralMismatch:
+                return message`argument at ${symbols.path} must be ${symbols.expectedValue}, received ${symbols.actualValue}`
             }
           }
 

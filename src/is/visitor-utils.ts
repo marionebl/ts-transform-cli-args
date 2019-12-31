@@ -1,4 +1,4 @@
-import ts from "typescript";
+import ts, { Expression } from "typescript";
 import * as tsutils from "tsutils/typeguard/3.0";
 import { VisitorContext } from "./visitor-context";
 import { ErrorMessage, ErrorType, templateFromError } from "../error-message";
@@ -459,7 +459,7 @@ export function createTypeAssertionFunction(
       functionName: `_${expectedType}`,
       expectedType,
       message: visitorContext.createErrorMessage({
-        type: ErrorType.Mismatch
+        type: ErrorType.TypeMismatch
       })
     });
   });
@@ -469,8 +469,20 @@ export function createAssertionFunctionWithMessage(init: {
   failureCondition: ts.Expression;
   functionName: string;
   expectedType: string;
+  expectedValue?: string | number; 
   message: ErrorMessage;
 }) {
+  const createOptionalValueLiteral = (expectedValue?: string | number): Expression => {
+    switch (typeof expectedValue) {
+      case "undefined":
+        return ts.createIdentifier("undefined");
+      case "number":
+        return ts.createNumericLiteral(expectedValue.toString());
+      case "string":
+        return ts.createStringLiteral(expectedValue);
+    }
+  }
+
   return ts.createFunctionDeclaration(
     undefined,
     undefined,
@@ -495,6 +507,11 @@ export function createAssertionFunctionWithMessage(init: {
           ts.createIdentifier("expectedType"),
           undefined,
           ts.createStringLiteral(init.expectedType)
+        ),
+        ts.createVariableDeclaration(
+          ts.createIdentifier("expectedValue"),
+          undefined,
+          createOptionalValueLiteral(init.expectedValue)
         )
       ]),
       ts.createIf(

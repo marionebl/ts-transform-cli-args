@@ -536,38 +536,34 @@ function visitLiteralType(
   type: ts.LiteralType,
   visitorContext: VisitorContext
 ) {
-  if (typeof type.value === "string") {
-    const name = VisitorTypeName.visitType(type, visitorContext, {
-      type: "type-check"
-    });
-    const value = type.value;
-    return VisitorUtils.setFunctionIfNotExists(name, visitorContext, () => {
-      return VisitorUtils.createAssertionFunction(
-        ts.createStrictInequality(
-          VisitorUtils.objectIdentifier,
-          ts.createStringLiteral(value)
-        ),
-        name,
-        visitorContext.createErrorMessage
-      );
-    });
-  } else if (typeof type.value === "number") {
-    const name = VisitorTypeName.visitType(type, visitorContext, {
-      type: "type-check"
-    });
-    return VisitorUtils.setFunctionIfNotExists(name, visitorContext, () => {
-      return VisitorUtils.createAssertionFunction(
-        ts.createStrictInequality(
-          VisitorUtils.objectIdentifier,
-          ts.createNumericLiteral(type.value.toString())
-        ),
-        name,
-        visitorContext.createErrorMessage
-      );
-    });
-  } else {
+  const name = VisitorTypeName.visitType(type, visitorContext, {
+    type: "type-check"
+  });
+
+  if (typeof type.value !== "string" && typeof type.value !== "number") {
     throw new Error("Type value is expected to be a string or number.");
   }
+
+  const value = type.value as string | number;
+
+  return VisitorUtils.setFunctionIfNotExists(name, visitorContext, () => {
+    const literal = typeof type.value === "string" 
+      ? ts.createStringLiteral(type.value)
+      : ts.createNumericLiteral(type.value.toString());
+
+    return VisitorUtils.createAssertionFunctionWithMessage({
+      functionName: name,
+      expectedType: typeof value,
+      expectedValue: value,
+      failureCondition: ts.createStrictInequality(
+        VisitorUtils.objectIdentifier,
+        literal
+      ),
+      message: visitorContext.createErrorMessage({
+        type: ErrorType.LiteralMismatch
+      }),
+    });
+  });
 }
 
 function visitUnionOrIntersectionType(

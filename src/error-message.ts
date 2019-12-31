@@ -3,9 +3,10 @@ import ts from "typescript";
 export enum ErrorType {
   Never,
   Missing,
-  Mismatch,
+  TypeMismatch,
   Length,
-  Range
+  Range,
+  LiteralMismatch
 }
 
 export const symbols = {
@@ -15,6 +16,7 @@ export const symbols = {
   actualLength: Symbol(),
   expectedType: Symbol(),
   expectedLength: Symbol(),
+  expectedValue: Symbol(),
   expectedMinLength: Symbol(),
   expectedMaxLength: Symbol()
 };
@@ -27,7 +29,8 @@ export type ErrorSymbol =
   | typeof symbols.expectedType
   | typeof symbols.expectedLength
   | typeof symbols.expectedMinLength
-  | typeof symbols.expectedMaxLength;
+  | typeof symbols.expectedMaxLength
+  | typeof symbols.expectedValue;
 
 export type ErrorMessage = (string | symbol)[];
 
@@ -74,6 +77,15 @@ function expressionFromSymbol(symbol: ErrorSymbol): ts.Expression {
       return ts.createIdentifier("expectedMinLength");
     case symbols.expectedMaxLength:
       return ts.createIdentifier("expectedMaxLength");
+    case symbols.expectedValue:
+      return ts.createCall(
+        ts.createPropertyAccess(
+          ts.createIdentifier("JSON"),
+          ts.createIdentifier("stringify")
+        ),
+        undefined,
+        [ts.createIdentifier("expectedValue")]
+      );
     default:
       throw new Error(`unknown symbol`);
   }
