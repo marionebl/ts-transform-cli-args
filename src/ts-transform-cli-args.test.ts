@@ -228,6 +228,14 @@ describe("named arguments", () => {
       expect(err).toBeNull();
     }
   });
+
+  test.skip("assigns aliases correctly", async () => {
+    const cli = testCli.fromInterface({ named: `{ hello: [boolean] }`, aliases: { h: 'hello' } });
+    const [err, flags] = cli(["-h"]);
+
+    expect(err).toBeNull();
+    expect(flags).toEqual({  hello: true });
+  });
 });
 
 describe("positional arguments", () => {

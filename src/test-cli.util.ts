@@ -5,6 +5,7 @@ import { FromType } from "./types";
 export interface InterfaceDescriptor {
   positional: string;
   named: string;
+  aliases: { [key: string]: string }
 }
 
 export class TestCli {
@@ -32,8 +33,9 @@ export class TestCli {
       import { fromType } from "ts-transform-cli-args";
       export const cli = fromType<${[
         descriptor.named || "{}",
-        descriptor.positional || "[]"
-      ]}>();
+        descriptor.positional || "[]",
+        JSON.stringify(descriptor.aliases || {})
+      ].join(", ")}>();
     `);
   }
 }
