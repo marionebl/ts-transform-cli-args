@@ -623,34 +623,29 @@ function visitBooleanLiteral(type: ts.Type, visitorContext: VisitorContext) {
   // Using internal TypeScript API, hacky.
   const intrinsicName: string | undefined = (type as { intrinsicName?: string })
     .intrinsicName;
-  if (intrinsicName === "true") {
-    const name = "_true";
-    return VisitorUtils.setFunctionIfNotExists(name, visitorContext, () => {
-      return VisitorUtils.createAssertionFunction(
-        ts.createStrictInequality(
-          VisitorUtils.objectIdentifier,
-          ts.createTrue()
-        ),
-        name,
-        visitorContext.createErrorMessage
-      );
-    });
-  } else if (intrinsicName === "false") {
-    const name = "_false";
-    return VisitorUtils.setFunctionIfNotExists(name, visitorContext, () => {
-      return VisitorUtils.createAssertionFunction(
-        ts.createStrictInequality(
-          VisitorUtils.objectIdentifier,
-          ts.createFalse()
-        ),
-        name,
-        visitorContext.createErrorMessage
-      );
-    });
-  } else {
-    throw new Error(
-      `Unsupported boolean literal with intrinsic name: ${intrinsicName}.`
-    );
+
+  const explicitValue = intrinsicName === "true" ? ts.createTrue() : ts.createFalse();
+  const expectedValue = intrinsicName === "true";
+
+  switch (intrinsicName) {
+    case "true":
+    case "false":
+      return VisitorUtils.setFunctionIfNotExists(name, visitorContext, () => {
+        return VisitorUtils.createAssertionFunctionWithMessage({
+          expectedType: "boolean",
+          expectedValue,
+          failureCondition: ts.createStrictInequality(
+            VisitorUtils.objectIdentifier,
+            explicitValue
+          ),
+          functionName: name,
+          message: visitorContext.createErrorMessage({
+            type: ErrorType.LiteralMismatch
+          })
+        });
+      });
+    default:
+      throw new Error(`Unsupported boolean literal: ${intrinsicName}.`);
   }
 }
 
@@ -687,11 +682,14 @@ function visitNonPrimitiveType(type: ts.Type, visitorContext: VisitorContext) {
         conditions,
         ts.SyntaxKind.AmpersandAmpersandToken
       );
-      return VisitorUtils.createAssertionFunction(
-        ts.createLogicalNot(condition),
-        name,
-        visitorContext.createErrorMessage
-      );
+      return VisitorUtils.createAssertionFunctionWithMessage({
+        failureCondition: ts.createLogicalNot(condition),
+        functionName: name,
+        expectedType: "object",
+        message: visitorContext.createErrorMessage({
+          type: ErrorType.TypeMismatch,
+        })
+      });
     });
   } else {
     throw new Error(

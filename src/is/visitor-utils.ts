@@ -469,10 +469,10 @@ export function createAssertionFunctionWithMessage(init: {
   failureCondition: ts.Expression;
   functionName: string;
   expectedType: string;
-  expectedValue?: string | number; 
+  expectedValue?: string | number | boolean; 
   message: ErrorMessage;
 }) {
-  const createOptionalValueLiteral = (expectedValue?: string | number): Expression => {
+  const createOptionalValueLiteral = (expectedValue?: string | number | boolean): Expression => {
     switch (typeof expectedValue) {
       case "undefined":
         return ts.createIdentifier("undefined");
@@ -480,6 +480,8 @@ export function createAssertionFunctionWithMessage(init: {
         return ts.createNumericLiteral(expectedValue.toString());
       case "string":
         return ts.createStringLiteral(expectedValue);
+      case "boolean":
+        return expectedValue ? ts.createTrue() : ts.createFalse()
     }
   }
 
