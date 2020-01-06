@@ -8,4 +8,4 @@ export type FromType = <
   _Aliases extends Aliases<Named> = {}
 >(
   _: string[]
-) => [Error, [Named, Positional]];
+) => [Error, [Readonly<Named>, Readonly<Positional>]];

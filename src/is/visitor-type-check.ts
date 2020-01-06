@@ -7,7 +7,7 @@ import * as VisitorIndexedAccess from "./visitor-indexed-access";
 import * as VisitorIsStringKeyof from "./visitor-is-string-keyof";
 import * as VisitorTypeName from "./visitor-type-name";
 import { sliceSet } from "./utils";
-import { ErrorType, templateFromError } from "../error-message";
+import { ErrorType, templateFromError, symbols } from "../error-message";
 
 function visitTupleObjectType(
   type: ts.TupleType,
@@ -16,23 +16,52 @@ function visitTupleObjectType(
   const name = VisitorTypeName.visitType(type, visitorContext, {
     type: "type-check"
   });
+
   return VisitorUtils.setFunctionIfNotExists(name, visitorContext, () => {
-    const functionNames = type.typeArguments
-      ? type.typeArguments.map(type => visitType(type, visitorContext))
+    const properties = type.typeArguments
+      ? type.typeArguments.reduce<ts.Symbol[]>((acc, _, index) => {
+          const prop = type.getProperty(index.toString());
+          return prop ? [...acc, prop] : acc;
+        }, [])
       : [];
+
+    const functionNames = type.typeArguments
+      ? type.typeArguments.map((t, index) => {
+          const prop = properties[index]!;
+          const isOptional = (prop.flags & ts.SymbolFlags.Optional) !== 0;
+          return isOptional
+            ? visitUndefinedOrType(t, visitorContext)
+            : visitType(t, visitorContext);
+        })
+      : [];
+
+    const maxLength = properties.length;
+    const minLength = properties.reduce(
+      (acc, prop) =>
+        acc + ((prop.flags & ts.SymbolFlags.Optional) !== 0 ? 0 : 1),
+      0
+    );
+    const errorType =
+      minLength === maxLength ? ErrorType.Length : ErrorType.Range;
+
     const errorIdentifier = ts.createIdentifier("error");
 
-    const maxLength = functionNames.length;
-    let minLength = functionNames.length;
-    for (let i = 0; i < functionNames.length; i++) {
-      const property = type.getProperty(i.toString());
-      if (property && (property.flags & ts.SymbolFlags.Optional) !== 0) {
-        minLength = i;
-        break;
-      }
-    }
+    visitorContext.coercion.array.push(visitorContext.path.join("."));
 
-    const errorType = minLength === maxLength ? ErrorType.Length : ErrorType.Range;
+    visitorContext.coercion.tuple.push({
+      key: visitorContext.path.join("."),
+      members: (type.typeArguments || []).map((t, i) => ({
+        key: i,
+        type: getTypeString(t, visitorContext)
+      }))
+    });
+
+    if (errorType === ErrorType.Length) {
+      visitorContext.coercion.length.push({
+        name: visitorContext.path.join("."),
+        length: minLength
+      });
+    }
 
     return ts.createFunctionDeclaration(
       undefined,
@@ -151,14 +180,24 @@ function visitArrayObjectType(
   const name = VisitorTypeName.visitType(type, visitorContext, {
     type: "type-check"
   });
+
+  const numberIndexType = visitorContext.checker.getIndexTypeOfType(
+    type,
+    ts.IndexKind.Number
+  );
+
+  if (numberIndexType === undefined) {
+    throw new Error("Expected array ObjectType to have a number index type.");
+  }
+
+  const coercionType = getTypeString(numberIndexType, visitorContext);
+
+  visitorContext.coercion.array.push({
+    key: visitorContext.path.join("."),
+    ...(coercionType ? { [coercionType]: true } : {})
+  });
+
   return VisitorUtils.setFunctionIfNotExists(name, visitorContext, () => {
-    const numberIndexType = visitorContext.checker.getIndexTypeOfType(
-      type,
-      ts.IndexKind.Number
-    );
-    if (numberIndexType === undefined) {
-      throw new Error("Expected array ObjectType to have a number index type.");
-    }
     const functionName = visitType(numberIndexType, visitorContext);
     const indexIdentifier = ts.createIdentifier("i");
     const errorIdentifier = ts.createIdentifier("error");
@@ -353,7 +392,10 @@ function visitRegularObjectType(
           }
           const functionName = propertyInfo.isMethod
             ? VisitorUtils.getIgnoredTypeFunction(visitorContext)
-            : visitType(propertyInfo.type!, visitorContext);
+            : visitType(propertyInfo.type!, {
+                ...visitorContext,
+                path: [...visitorContext.path, propertyInfo.name]
+              });
           return ts.createBlock([
             ts.createExpressionStatement(
               ts.createCall(
@@ -503,6 +545,34 @@ function visitTypeReference(
   return result;
 }
 
+function getTypeParameterString(type: ts.Type, visitorContext: VisitorContext) {
+  const mappedType = VisitorUtils.getResolvedTypeParameter(
+    type,
+    visitorContext
+  );
+  if (mappedType === undefined) {
+    throw new Error("Unbound type parameter, missing type node.");
+  }
+  return getTypeString(mappedType, visitorContext);
+}
+
+function getLiteralTypeString(
+  type: ts.LiteralType,
+  visitorContext: VisitorContext
+) {
+  const name = VisitorTypeName.visitType(type, visitorContext, {
+    type: "type-check"
+  });
+
+  if (typeof type.value !== "string" && typeof type.value !== "number") {
+    throw new Error("Type value is expected to be a string or number.");
+  }
+
+  const value = type.value as string | number;
+
+  return typeof value;
+}
+
 function visitTypeParameter(type: ts.Type, visitorContext: VisitorContext) {
   const mappedType = VisitorUtils.getResolvedTypeParameter(
     type,
@@ -547,9 +617,10 @@ function visitLiteralType(
   const value = type.value as string | number;
 
   return VisitorUtils.setFunctionIfNotExists(name, visitorContext, () => {
-    const literal = typeof type.value === "string" 
-      ? ts.createStringLiteral(type.value)
-      : ts.createNumericLiteral(type.value.toString());
+    const literal =
+      typeof type.value === "string"
+        ? ts.createStringLiteral(type.value)
+        : ts.createNumericLiteral(type.value.toString());
 
     return VisitorUtils.createAssertionFunctionWithMessage({
       functionName: name,
@@ -561,7 +632,7 @@ function visitLiteralType(
       ),
       message: visitorContext.createErrorMessage({
         type: ErrorType.LiteralMismatch
-      }),
+      })
     });
   });
 }
@@ -624,7 +695,8 @@ function visitBooleanLiteral(type: ts.Type, visitorContext: VisitorContext) {
   const intrinsicName: string | undefined = (type as { intrinsicName?: string })
     .intrinsicName;
 
-  const explicitValue = intrinsicName === "true" ? ts.createTrue() : ts.createFalse();
+  const explicitValue =
+    intrinsicName === "true" ? ts.createTrue() : ts.createFalse();
   const expectedValue = intrinsicName === "true";
 
   switch (intrinsicName) {
@@ -687,7 +759,7 @@ function visitNonPrimitiveType(type: ts.Type, visitorContext: VisitorContext) {
         functionName: name,
         expectedType: "object",
         message: visitorContext.createErrorMessage({
-          type: ErrorType.TypeMismatch,
+          type: ErrorType.TypeMismatch
         })
       });
     });
@@ -753,6 +825,57 @@ function visitIndexedAccessType(
     type.indexType,
     visitorContext
   );
+}
+
+export function getTypeString(
+  type: ts.Type,
+  visitorContext: VisitorContext
+): "number" | "boolean" | "string" | undefined {
+  if ((ts.TypeFlags.Number & type.flags) !== 0) {
+    return "number";
+  } else if ((ts.TypeFlags.Boolean & type.flags) !== 0) {
+    return "boolean";
+  } else if ((ts.TypeFlags.String & type.flags) !== 0) {
+    return "string";
+  } else if ((ts.TypeFlags.BooleanLiteral & type.flags) !== 0) {
+    return "boolean";
+  } else if (
+    tsutils.isTypeReference(type) &&
+    visitorContext.previousTypeReference !== type
+  ) {
+    // Type references.
+    return getTypeReferenceString(type, visitorContext);
+  } else if ((ts.TypeFlags.TypeParameter & type.flags) !== 0) {
+    // Type parameter
+    return getTypeParameterString(type, visitorContext);
+  } else if (tsutils.isLiteralType(type)) {
+    // Literal string/number types ('foo')
+    switch(getLiteralTypeString(type, visitorContext)) {
+      case "number":
+        return "number";
+      case "boolean":
+        return "boolean";
+      case "string":
+        return "string";
+    };
+  }
+}
+
+export function getTypeReferenceString(
+  type: ts.TypeReference,
+  visitorContext: VisitorContext
+): "number" | "boolean" | "string" | undefined {
+  const mapping: Map<ts.Type, ts.Type> = VisitorUtils.getTypeReferenceMapping(
+    type,
+    visitorContext
+  );
+  const previousTypeReference = visitorContext.previousTypeReference;
+  visitorContext.typeMapperStack.push(mapping);
+  visitorContext.previousTypeReference = type;
+  const result = getTypeString(type.target, visitorContext);
+  visitorContext.previousTypeReference = previousTypeReference;
+  visitorContext.typeMapperStack.pop();
+  return result;
 }
 
 export function visitType(

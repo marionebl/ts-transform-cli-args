@@ -136,8 +136,8 @@ describe("named arguments", () => {
     }
   });
 
-  test.skip("validates tuple length", async () => {
-    const cli = testCli.fromInterface({ named: `{  hello: [string, number, boolean] }` });
+  test("validates tuple length", async () => {
+    const cli = testCli.fromInterface({ named: `{  hello: [string, number, string] }` });
 
     {
       const [err] = cli(["--hello=1337"]);
@@ -154,12 +154,12 @@ describe("named arguments", () => {
     }
 
     {
-      const [err] = cli(["--hello='world'", "--hello=1337", "--hello"]);
+      const [err] = cli(["--hello='world'", "--hello=1337", "--hello='world'"]);
       expect(err).toBeNull();
     }
   });
 
-  test.skip("validates tuple range", async () => {
+  test("validates tuple range", async () => {
     const cli = testCli.fromInterface({ named: `{ hello: [string, string, string?] }` });
 
     {
@@ -180,7 +180,7 @@ describe("named arguments", () => {
     }
   });
 
-  test.skip("validates tuple member type string", async () => {
+  test("validates tuple member type string", async () => {
     const cli = testCli.fromInterface({ named: `{ hello: [string] }` });
 
     {
@@ -191,18 +191,18 @@ describe("named arguments", () => {
     }
 
     {
-      const [err] = cli(["leet"]);
+      const [err] = cli(["--hello='leet'"]);
       expect(err).toBeNull();
     }
   });
 
-  test.skip("validates tuple member type number", async () => {
+  test("validates tuple member type number", async () => {
     const cli = testCli.fromInterface({ named: `{ hello: [number] }` });
 
     {
       const [err] = cli(["--hello=leet"]);
       expect(err.message).toBe(
-        `--hello[0] must be of type number. Received leet of type string`
+        `--hello[0] must be of type number. Received "leet" of type string`
       );
     }
 
@@ -212,21 +212,12 @@ describe("named arguments", () => {
     }
   });
 
+  test("coerces array member type string", async () => {
+    const cli = testCli.fromInterface({ named: `{ hello: string[] }` });
 
-  test.skip("validates tuple member type boolean", async () => {
-    const cli = testCli.fromInterface({ named: `{ hello: [boolean] }` });
-
-    {
-      const [err] = cli(["--hello=1337"]);
-      expect(err.message).toBe(
-        `--hello[0] must be of type boolean. Received 1337 of type number`
-      );
-    }
-
-    {
-      const [err] = cli(["--hello"]);
-      expect(err).toBeNull();
-    }
+    const [err, [named]] = cli<{  hello: string[] }>(["--hello=1337", "--hello=leet"]);
+    expect(err).toBeNull();
+    expect(named.hello).toEqual(["1337", "leet"]);
   });
 
   test.skip("assigns aliases correctly", async () => {
@@ -263,7 +254,7 @@ describe("positional arguments", () => {
     }
   });
 
-  test.skip("validates tuple range", async () => {
+  test("validates tuple range", async () => {
     const cli = testCli.fromInterface({ positional: `[string, string, string?]` });
 
     {
@@ -289,9 +280,12 @@ describe("positional arguments", () => {
 
     {
       const [err] = cli(["1337"]);
-      expect(err.message).toBe(
-        `argument at [0] must be of type string. Received 1337 of type number`
-      );
+      expect(err).toBeNull();
+    }
+
+    {
+      const [err] = cli(["false"]);
+      expect(err).toBeNull();
     }
 
     {
@@ -317,7 +311,7 @@ describe("positional arguments", () => {
   });
 
 
-  test.skip("validates tuple member type boolean", async () => {
+  test("validates tuple member type boolean", async () => {
     const cli = testCli.fromInterface({ positional: `[boolean]` });
 
     {
@@ -336,12 +330,6 @@ describe("positional arguments", () => {
   test("validates string array", async () => {
     const cli = testCli.fromInterface({ positional: `string[]` });
 
-    {
-      const [err] = cli(["1337"]);
-      expect(err.message).toBe(
-        `argument at [0] must be of type string. Received 1337 of type number`
-      );
-    }
 
     {
       const [err] = cli(["leet"]);
@@ -352,6 +340,14 @@ describe("positional arguments", () => {
       const [err] = cli([]);
       expect(err).toBeNull();
     }
+  });
+
+  test("coerces string array", async () => {
+    const cli = testCli.fromInterface({ positional: `string[]` });
+
+    const [err, [, positional]] = cli(["1337"]);
+    expect(err).toBeNull();
+    expect(positional).toEqual(["1337"]);
   });
 
   test("validates number array", async () => {
@@ -375,7 +371,7 @@ describe("positional arguments", () => {
     }
   });
 
-  test.skip("validates boolean array", async () => {
+  test("validates boolean array", async () => {
     const cli = testCli.fromInterface({ positional: `boolean[]` });
 
     {

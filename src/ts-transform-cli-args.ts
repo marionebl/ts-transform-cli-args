@@ -1,12 +1,8 @@
 import ts from "typescript";
 import JSON5 from "json5";
 import { createArrowFunction } from "./is/transform-node";
-import {
-  ErrorType,
-  ErrorMessage,
-  message,
-  symbols
-} from "./error-message";
+import { ErrorType, ErrorMessage, message, symbols } from "./error-message";
+import { Coercion } from "./is/visitor-context";
 
 export interface TransformerOptions {
   env: { [key: string]: string };
@@ -33,9 +29,10 @@ export const getTransformer = (program: ts.Program) => {
 
           const check = typeChecker as any;
 
-          const namedType = namedTypeArgument
+          const namedType: ts.Type = namedTypeArgument
             ? typeChecker.getTypeFromTypeNode(namedTypeArgument)
-            : check.createAnonymousType(
+            : // HACK: internal API :'(
+              check.createAnonymousType(
                 undefined,
                 (ts as any).createSymbolTable(),
                 (ts as any).emptyArray,
@@ -44,12 +41,80 @@ export const getTransformer = (program: ts.Program) => {
                 undefined
               );
 
-          const positionalType = positionalTypeArgument
+          const positionalType: ts.Type = positionalTypeArgument
             ? typeChecker.getTypeFromTypeNode(positionalTypeArgument)
             : check.createArrayType(check.getNeverType());
 
           const argNode = node.arguments[0];
           const options = argNode ? getOptions(argNode) : {};
+
+          const namedCoercion: Coercion = {
+            array: [],
+            tuple: [],
+            length: [],
+            boolean: [],
+            string: [],
+            number: []
+          };
+
+          const positionalCoercion: Coercion = {
+            array: [],
+            tuple: [],
+            length: [],
+            boolean: [],
+            string: [],
+            number: []
+          };
+
+          const validateNamed = createArrowFunction(namedType, false, {
+            program,
+            checker: typeChecker,
+            options: {
+              shortCircuit: false,
+              ignoreClasses: true,
+              ignoreMethods: true,
+              disallowSuperfluousObjectProperties: true
+            },
+            typeMapperStack: [],
+            previousTypeReference: null,
+            path: [],
+            createErrorMessage: createNamedErrorMessage,
+            coercion: namedCoercion
+          });
+
+          const validatePositional = createArrowFunction(
+            positionalType,
+            false,
+            {
+              program,
+              checker: typeChecker,
+              options: {
+                shortCircuit: false,
+                ignoreClasses: true,
+                ignoreMethods: true,
+                disallowSuperfluousObjectProperties: true
+              },
+              typeMapperStack: [],
+              previousTypeReference: null,
+              path: [],
+              createErrorMessage: createPositionalErrorMessage,
+              coercion: positionalCoercion
+            }
+          );
+
+          const posCo = positionalCoercion.array[0];
+          const posType =
+            typeof posCo === "object"
+              ? posCo.boolean
+                ? "boolean"
+                : posCo.number
+                ? "number"
+                : posCo.string
+                ? "string"
+                : undefined
+              : undefined;
+
+          const posTupleCoercion = positionalCoercion.tuple[0];
 
           function createNamedErrorMessage(data: {
             type: ErrorType;
@@ -64,9 +129,9 @@ export const getTransformer = (program: ts.Program) => {
               case ErrorType.Length:
                 return message`--${symbols.path} must be array of length ${symbols.expectedLength}. Received ${symbols.actualValue} of length ${symbols.actualLength}`;
               case ErrorType.Range:
-                return message`--${symbols.path} must be array with a length from ${symbols.expectedMinLength} to ${symbols.expectedMaxLength}. Received ${symbols.actualValue} of length ${symbols.actualLength}`
+                return message`--${symbols.path} must be array with a length from ${symbols.expectedMinLength} to ${symbols.expectedMaxLength}. Received ${symbols.actualValue} of length ${symbols.actualLength}`;
               case ErrorType.LiteralMismatch:
-                return message`--${symbols.path} must be ${symbols.expectedValue}, received ${symbols.actualValue}`
+                return message`--${symbols.path} must be ${symbols.expectedValue}, received ${symbols.actualValue}`;
             }
           }
 
@@ -83,9 +148,9 @@ export const getTransformer = (program: ts.Program) => {
               case ErrorType.Length:
                 return message`requires exactly ${symbols.expectedLength} arguments. Received ${symbols.actualValue} of length ${symbols.actualLength}`;
               case ErrorType.Range:
-                return message`requires ${symbols.expectedMinLength} to ${symbols.expectedMaxLength} arguments. Received ${symbols.actualValue} of length ${symbols.actualLength}`
+                return message`requires ${symbols.expectedMinLength} to ${symbols.expectedMaxLength} arguments. Received ${symbols.actualValue} of length ${symbols.actualLength}`;
               case ErrorType.LiteralMismatch:
-                return message`argument at ${symbols.path} must be ${symbols.expectedValue}, received ${symbols.actualValue}`
+                return message`argument at ${symbols.path} must be ${symbols.expectedValue}, received ${symbols.actualValue}`;
             }
           }
 
@@ -103,6 +168,456 @@ export const getTransformer = (program: ts.Program) => {
                   ts.createVariableDeclarationList(
                     [
                       ts.createVariableDeclaration(
+                        "coerceString",
+                        undefined,
+                        ts.createArrowFunction(
+                          undefined,
+                          undefined,
+                          [
+                            ts.createParameter(
+                              undefined,
+                              undefined,
+                              undefined,
+                              "item"
+                            )
+                          ],
+                          undefined,
+                          undefined,
+                          ts.createBlock([
+                            ts.createIf(
+                              ts.createStrictEquality(
+                                ts.createTypeOf(ts.createIdentifier("item")),
+                                ts.createLiteral("undefined")
+                              ),
+                              ts.createBlock([
+                                ts.createReturn(
+                                  ts.createIdentifier("undefined")
+                                )
+                              ]),
+                              ts.createBlock([
+                                ts.createReturn(
+                                  ts.createCall(
+                                    ts.createIdentifier("String"),
+                                    undefined,
+                                    [ts.createIdentifier("item")]
+                                  )
+                                )
+                              ])
+                            )
+                          ])
+                        )
+                      ),
+                      ts.createVariableDeclaration(
+                        "coerceBoolean",
+                        undefined,
+                        ts.createArrowFunction(
+                          undefined,
+                          undefined,
+                          [
+                            ts.createParameter(
+                              undefined,
+                              undefined,
+                              undefined,
+                              "item"
+                            )
+                          ],
+                          undefined,
+                          undefined,
+                          ts.createBlock([
+                            ts.createSwitch(
+                              ts.createIdentifier("item"),
+                              ts.createCaseBlock([
+                                ts.createCaseClause(
+                                  ts.createStringLiteral("true"),
+                                  [ts.createReturn(ts.createTrue())]
+                                ),
+                                ts.createCaseClause(
+                                  ts.createStringLiteral("false"),
+                                  [ts.createReturn(ts.createFalse())]
+                                ),
+                                ts.createDefaultClause([
+                                  ts.createReturn(ts.createIdentifier("item"))
+                                ])
+                              ])
+                            )
+                          ])
+                        )
+                      ),
+                      ts.createVariableDeclaration(
+                        "coerceNumber",
+                        undefined,
+                        ts.createArrowFunction(
+                          undefined,
+                          undefined,
+                          [
+                            ts.createParameter(
+                              undefined,
+                              undefined,
+                              undefined,
+                              ts.createIdentifier("item")
+                            )
+                          ],
+                          undefined,
+                          undefined,
+                          ts.createBlock([
+                            ts.createVariableStatement(
+                              undefined,
+                              ts.createVariableDeclarationList([
+                                ts.createVariableDeclaration(
+                                  ts.createIdentifier("coerced"),
+                                  undefined,
+                                  ts.createCall(
+                                    ts.createIdentifier("parseInt"),
+                                    undefined,
+                                    [ts.createIdentifier("item")]
+                                  )
+                                )
+                              ])
+                            ),
+                            ts.createReturn(
+                              ts.createConditional(
+                                ts.createCall(
+                                  ts.createPropertyAccess(
+                                    ts.createIdentifier("Number"),
+                                    ts.createIdentifier("isNaN")
+                                  ),
+                                  undefined,
+                                  [ts.createIdentifier("coerced")]
+                                ),
+                                ts.createIdentifier("item"),
+                                ts.createIdentifier("coerced")
+                              )
+                            )
+                          ])
+                        )
+                      ),
+                      ts.createVariableDeclaration(
+                        "coerceArray",
+                        undefined,
+                        ts.createArrowFunction(
+                          undefined,
+                          undefined,
+                          [
+                            ts.createParameter(
+                              undefined,
+                              undefined,
+                              undefined,
+                              "input",
+                              undefined,
+                              ts.createArrayTypeNode(
+                                ts.createKeywordTypeNode(
+                                  ts.SyntaxKind.UnknownKeyword
+                                )
+                              )
+                            )
+                          ],
+                          undefined,
+                          undefined,
+                          ts.createBlock(
+                            [
+                              ...(typeof posType === "undefined"
+                                ? [
+                                    ts.createReturn(
+                                      ts.createIdentifier("input")
+                                    )
+                                  ]
+                                : []),
+                              ...(posType === "string"
+                                ? [
+                                    ts.createReturn(
+                                      ts.createCall(
+                                        ts.createPropertyAccess(
+                                          ts.createIdentifier("input"),
+                                          ts.createIdentifier("map")
+                                        ),
+                                        undefined,
+                                        [ts.createIdentifier("coerceString")]
+                                      )
+                                    )
+                                  ]
+                                : []),
+                              ...(posType === "boolean"
+                                ? [
+                                    ts.createReturn(
+                                      ts.createCall(
+                                        ts.createPropertyAccess(
+                                          ts.createIdentifier("input"),
+                                          ts.createIdentifier("map")
+                                        ),
+                                        undefined,
+                                        [ts.createIdentifier("coerceBoolean")]
+                                      )
+                                    )
+                                  ]
+                                : []),
+                              ...(posType === "number"
+                                ? [
+                                    ts.createReturn(
+                                      ts.createCall(
+                                        ts.createPropertyAccess(
+                                          ts.createIdentifier("input"),
+                                          ts.createIdentifier("map")
+                                        ),
+                                        undefined,
+                                        [ts.createIdentifier("coerceNumber")]
+                                      )
+                                    )
+                                  ]
+                                : [])
+                            ],
+                            true
+                          )
+                        )
+                      ),
+                      ts.createVariableDeclaration(
+                        "coerceTuple",
+                        undefined,
+                        ts.createArrowFunction(
+                          undefined,
+                          undefined,
+                          [
+                            ts.createParameter(
+                              undefined,
+                              undefined,
+                              undefined,
+                              "input"
+                            )
+                          ],
+                          undefined,
+                          undefined,
+                          ts.createBlock(
+                            posTupleCoercion
+                              ? [
+                                  ts.createVariableStatement(undefined, [
+                                    ts.createVariableDeclaration(
+                                      ts.createIdentifier("members"),
+                                      undefined,
+                                      ts.createArrayLiteral(
+                                        posTupleCoercion.members.map(member =>
+                                          ts.createObjectLiteral([
+                                            ts.createPropertyAssignment(
+                                              "key",
+                                              ts.createNumericLiteral(
+                                                member.key.toString()
+                                              )
+                                            ),
+                                            ts.createPropertyAssignment(
+                                              "type",
+                                              typeof member.type === "undefined"
+                                                ? ts.createIdentifier(
+                                                    "undefined"
+                                                  )
+                                                : ts.createStringLiteral(
+                                                    member.type
+                                                  )
+                                            )
+                                          ])
+                                        )
+                                      )
+                                    )
+                                  ]),
+                                  ts.createReturn(
+                                    ts.createCall(
+                                      ts.createPropertyAccess(
+                                        ts.createIdentifier("input"),
+                                        ts.createIdentifier("map")
+                                      ),
+                                      undefined,
+                                      [
+                                        ts.createArrowFunction(
+                                          undefined,
+                                          undefined,
+                                          [
+                                            ts.createParameter(
+                                              undefined,
+                                              undefined,
+                                              undefined,
+                                              "item"
+                                            ),
+                                            ts.createParameter(
+                                              undefined,
+                                              undefined,
+                                              undefined,
+                                              "index"
+                                            )
+                                          ],
+                                          undefined,
+                                          undefined,
+                                          ts.createBlock([
+                                            ts.createVariableStatement(
+                                              undefined,
+                                              [
+                                                ts.createVariableDeclaration(
+                                                  "element",
+                                                  undefined,
+                                                  ts.createCall(
+                                                    ts.createPropertyAccess(
+                                                      ts.createIdentifier(
+                                                        "members"
+                                                      ),
+                                                      ts.createIdentifier(
+                                                        "find"
+                                                      )
+                                                    ),
+                                                    undefined,
+                                                    [
+                                                      ts.createArrowFunction(
+                                                        undefined,
+                                                        undefined,
+                                                        [
+                                                          ts.createParameter(
+                                                            undefined,
+                                                            undefined,
+                                                            undefined,
+                                                            "member"
+                                                          )
+                                                        ],
+                                                        undefined,
+                                                        undefined,
+                                                        ts.createStrictEquality(
+                                                          ts.createPropertyAccess(
+                                                            ts.createIdentifier(
+                                                              "member"
+                                                            ),
+                                                            ts.createIdentifier(
+                                                              "key"
+                                                            )
+                                                          ),
+                                                          ts.createIdentifier(
+                                                            "index"
+                                                          )
+                                                        )
+                                                      )
+                                                    ]
+                                                  )
+                                                )
+                                              ]
+                                            ),
+                                            ts.createReturn(
+                                              ts.createConditional(
+                                                ts.createStrictEquality(
+                                                  ts.createTypeOf(
+                                                    ts.createIdentifier(
+                                                      "element"
+                                                    )
+                                                  ),
+                                                  ts.createStringLiteral(
+                                                    "undefined"
+                                                  )
+                                                ),
+                                                ts.createIdentifier("item"),
+                                                ts.createConditional(
+                                                  ts.createStrictEquality(
+                                                    ts.createTypeOf(
+                                                      ts.createPropertyAccess(
+                                                        ts.createIdentifier(
+                                                          "element"
+                                                        ),
+                                                        ts.createIdentifier(
+                                                          "type"
+                                                        )
+                                                      )
+                                                    ),
+                                                    ts.createStringLiteral(
+                                                      "undefined"
+                                                    )
+                                                  ),
+                                                  ts.createIdentifier("item"),
+                                                  ts.createConditional(
+                                                    ts.createStrictEquality(
+                                                      ts.createPropertyAccess(
+                                                        ts.createIdentifier(
+                                                          "element"
+                                                        ),
+                                                        ts.createIdentifier(
+                                                          "type"
+                                                        )
+                                                      ),
+                                                      ts.createStringLiteral(
+                                                        "string"
+                                                      )
+                                                    ),
+                                                    ts.createCall(
+                                                      ts.createIdentifier(
+                                                        "coerceString"
+                                                      ),
+                                                      undefined,
+                                                      [
+                                                        ts.createIdentifier(
+                                                          "item"
+                                                        )
+                                                      ]
+                                                    ),
+                                                    ts.createConditional(
+                                                      ts.createStrictEquality(
+                                                        ts.createPropertyAccess(
+                                                          ts.createIdentifier(
+                                                            "element"
+                                                          ),
+                                                          ts.createIdentifier(
+                                                            "type"
+                                                          )
+                                                        ),
+                                                        ts.createStringLiteral(
+                                                          "boolean"
+                                                        )
+                                                      ),
+                                                      ts.createCall(
+                                                        ts.createIdentifier(
+                                                          "coerceBoolean"
+                                                        ),
+                                                        undefined,
+                                                        [
+                                                          ts.createIdentifier(
+                                                            "item"
+                                                          )
+                                                        ]
+                                                      ),
+                                                      ts.createConditional(
+                                                        ts.createStrictEquality(
+                                                          ts.createPropertyAccess(
+                                                            ts.createIdentifier(
+                                                              "element"
+                                                            ),
+                                                            ts.createIdentifier(
+                                                              "type"
+                                                            )
+                                                          ),
+                                                          ts.createStringLiteral(
+                                                            "number"
+                                                          )
+                                                        ),
+                                                        ts.createCall(
+                                                          ts.createIdentifier(
+                                                            "coerceNumber"
+                                                          ),
+                                                          undefined,
+                                                          [
+                                                            ts.createIdentifier(
+                                                              "item"
+                                                            )
+                                                          ]
+                                                        ),
+                                                        ts.createIdentifier(
+                                                          "item"
+                                                        )
+                                                      )
+                                                    )
+                                                  )
+                                                )
+                                              )
+                                            )
+                                          ])
+                                        )
+                                      ]
+                                    )
+                                  )
+                                ]
+                              : [ts.createReturn(ts.createIdentifier("input"))]
+                          )
+                        )
+                      ),
+                      ts.createVariableDeclaration(
                         "parse",
                         undefined,
                         ts.createCall(
@@ -114,42 +629,109 @@ export const getTransformer = (program: ts.Program) => {
                       ts.createVariableDeclaration(
                         "validateNamed",
                         undefined,
-                        createArrowFunction(namedType, false, {
-                          program,
-                          checker: typeChecker,
-                          options: {
-                            shortCircuit: false,
-                            ignoreClasses: true,
-                            ignoreMethods: true,
-                            disallowSuperfluousObjectProperties: true
-                          },
-                          typeMapperStack: [],
-                          previousTypeReference: null,
-                          createErrorMessage: createNamedErrorMessage
-                        })
+                        validateNamed
                       ),
                       ts.createVariableDeclaration(
                         "validatePositional",
                         undefined,
-                        createArrowFunction(positionalType, false, {
-                          program,
-                          checker: typeChecker,
-                          options: {
-                            shortCircuit: false,
-                            ignoreClasses: true,
-                            ignoreMethods: true,
-                            disallowSuperfluousObjectProperties: true
-                          },
-                          typeMapperStack: [],
-                          previousTypeReference: null,
-                          createErrorMessage: createPositionalErrorMessage
-                        })
+                        validatePositional
                       ),
                       ts.createVariableDeclaration(
                         "rawFlags",
                         undefined,
                         ts.createCall(ts.createIdentifier("parse"), undefined, [
-                          ts.createIdentifier("input")
+                          ts.createIdentifier("input"),
+                          ts.createObjectLiteral([
+                            ts.createPropertyAssignment(
+                              ts.createIdentifier("alias"),
+                              ts.createObjectLiteral([])
+                            ),
+                            ts.createPropertyAssignment(
+                              ts.createIdentifier("array"),
+                              ts.createArrayLiteral(
+                                namedCoercion.array.map(name =>
+                                  typeof name === "string"
+                                    ? ts.createStringLiteral(name)
+                                    : ts.createObjectLiteral([
+                                        ts.createPropertyAssignment(
+                                          ts.createIdentifier("key"),
+                                          ts.createStringLiteral(name.key)
+                                        ),
+                                        ...(name.string
+                                          ? [
+                                              ts.createPropertyAssignment(
+                                                "string",
+                                                ts.createTrue()
+                                              )
+                                            ]
+                                          : []),
+                                        ...(name.number
+                                          ? [
+                                              ts.createPropertyAssignment(
+                                                "number",
+                                                ts.createTrue()
+                                              )
+                                            ]
+                                          : []),
+                                        ...(name.boolean
+                                          ? [
+                                              ts.createPropertyAssignment(
+                                                "boolean",
+                                                ts.createTrue()
+                                              )
+                                            ]
+                                          : [])
+                                      ])
+                                )
+                              )
+                            ),
+                            ts.createPropertyAssignment(
+                              ts.createIdentifier("boolean"),
+                              ts.createArrayLiteral([])
+                            ),
+                            ts.createPropertyAssignment(
+                              ts.createIdentifier("configuration"),
+                              ts.createObjectLiteral([
+                                ts.createPropertyAssignment(
+                                  ts.createStringLiteral(
+                                    "camel-case-expansion"
+                                  ),
+                                  ts.createFalse()
+                                ),
+                                ts.createPropertyAssignment(
+                                  ts.createStringLiteral("strip-aliased"),
+                                  ts.createTrue()
+                                )
+                              ])
+                            ),
+                            ts.createPropertyAssignment(
+                              "default",
+                              ts.createObjectLiteral()
+                            ),
+                            ts.createPropertyAssignment(
+                              "envPrefix",
+                              ts.createIdentifier("undefined")
+                            ),
+                            ts.createPropertyAssignment(
+                              "narg",
+                              ts.createObjectLiteral(
+                                namedCoercion.length.map(({ name, length }) =>
+                                  ts.createPropertyAssignment(
+                                    ts.createStringLiteral(name),
+                                    ts.createNumericLiteral(length.toString())
+                                  )
+                                )
+                              )
+                            ),
+                            ts.createPropertyAssignment(
+                              ts.createIdentifier("number"),
+                              ts.createArrayLiteral([])
+                            ),
+                            ts.createPropertyAssignment(
+                              ts.createIdentifier("string"),
+                              ts.createArrayLiteral([])
+                            )
+                          ])
                         ])
                       ),
                       ts.createVariableDeclaration(
@@ -164,15 +746,37 @@ export const getTransformer = (program: ts.Program) => {
                       ts.createVariableDeclaration(
                         "positional",
                         undefined,
-                        ts.createPropertyAccess(
-                          ts.createIdentifier("rawFlags"),
-                          ts.createIdentifier("_")
+                        ts.createCall(
+                          ts.createIdentifier("coerceTuple"),
+                          undefined,
+                          [
+                            ts.createCall(
+                              ts.createIdentifier("coerceArray"),
+                              undefined,
+                              [
+                                ts.createPropertyAccess(
+                                  ts.createIdentifier("rawFlags"),
+                                  ts.createIdentifier("_")
+                                )
+                              ]
+                            )
+                          ]
                         )
                       )
                     ],
                     ts.NodeFlags.Const
                   )
                 ),
+                // ts.createStatement(
+                //   ts.createCall(
+                //     ts.createPropertyAccess(
+                //       ts.createIdentifier("console"),
+                //       ts.createIdentifier("log"),
+                //     ),
+                //     undefined,
+                //     [ts.createIdentifier("positional")]
+                //   )
+                // ),
                 ts.createStatement(
                   ts.createDelete(
                     ts.createPropertyAccess(
