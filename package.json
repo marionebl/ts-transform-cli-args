@@ -40,7 +40,7 @@
   },
   "dependencies": {
     "@types/json5": "^0.0.30",
-    "json5": "^2.1.1",
+    "json5": "^2.2.2",
     "typescript-is": "^0.13.1"
   }
 }
